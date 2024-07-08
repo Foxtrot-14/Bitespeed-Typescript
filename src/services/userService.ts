@@ -1,12 +1,11 @@
 import pool from "../config/dbConfig";
 import { User } from "../models/index";
-
 type IdentifierType = "email" | "phoneNumber";
 
 export const getUserByOneParam = async (
   identifier: string,
   type: IdentifierType
-): Promise<{ user?: User; message?: string }> => {
+): Promise<User | null> => {
   try {
     let query = "";
     switch (type) {
@@ -16,15 +15,13 @@ export const getUserByOneParam = async (
       case "phoneNumber":
         query = "SELECT * FROM contacts WHERE phoneNumber = ?";
         break;
-      default:
-        return { message: "Invalid identifier type" };
     }
     const [rows] = await pool.query(query, [identifier]);
     const users = rows as User[];
     if (users.length > 0) {
-      return { user: users[0] };
+      return users[0];
     } else {
-      return { message: "User not found" };
+      return null;
     }
   } catch (error) {
     console.error("Error in getUserByOneParam:", error);
@@ -34,36 +31,56 @@ export const getUserByOneParam = async (
 export const getUserByBothParam = async (
   email: string,
   phoneNumber: string
-): Promise<User> => {
+): Promise<User | undefined> => {
   let connection;
   try {
+    //To be returned from the function
+    let finalUser: User | undefined;
     connection = await pool.getConnection();
     await connection.beginTransaction();
-    let query = "SELECT * FROM contacts WHERE email = ? AND phoneNumber = ?";
-    const [result] = await connection.query(query, [email, phoneNumber]);
-    const user = result as User[];
-    if (user.length != 0) {
-      return user[0];
-    } else {
-      // Step 1: Query to find users matching email or phone number
-      query = "SELECT * FROM contacts WHERE email = ? OR phoneNumber = ?";
-      const [rows] = await connection.query(query, [email, phoneNumber]);
-      const users = rows as User[];
-      // Step 2: Handle different scenarios based on query results
-      if (users.length > 0) {
-        //what if it matches a user that is secondary. Insert with the same linkedId
-        if (users[0].linkPrecedence === "secondary") {
-          await connection.query(
-            "INSERT INTO contacts (phoneNumber, email, linkPrecedence,linkedId) VALUES (?, ?, 'secondary',?)",
-            [phoneNumber, email, users[0].linkedId]
-          );
+    // Step 1: Query to find users matching email or phone number
+    let query = "SELECT * FROM contacts WHERE email = ? OR phoneNumber = ?";
+    const [rows] = await connection.query(query, [email, phoneNumber]);
+    const users = rows as User[];
+    // Step 2: Handle different scenarios based on query results
+    if (users.length > 0) {
+      //if there is an exact record match
+      users.find((user: User) => {
+        if (user.email == email && user.phoneNumber == phoneNumber) {
+          finalUser = user;
         }
-        // Handle multiple primary users scenario
-        const primaryUsers = users.filter(
-          (user) => user.linkPrecedence === "primary"
-        );
-        if (primaryUsers.length >= 2) {
+      });
+      //if no exact match
+      if (finalUser === undefined) {
+        let primaryCount: number = 0;
+        users.map((user: User) => {
+          if (
+            (user.email == email || user.phoneNumber == phoneNumber) &&
+            user.linkPrecedence == "primary"
+          ) {
+            primaryCount++;
+          }
+        });
+        if (primaryCount == 1) {
+          //add new record to the list
+          if (users[0].linkPrecedence == "secondary") {
+            await connection.query(
+              "INSERT INTO contacts (phoneNumber, email, linkPrecedence,linkedId) VALUES (?, ?, 'secondary',?)",
+              [phoneNumber, email, users[0].linkedId]
+            );
+          } else if (users[0].linkPrecedence == "primary") {
+            await connection.query(
+              "INSERT INTO contacts (phoneNumber, email, linkPrecedence,linkedId) VALUES (?, ?, 'secondary',?)",
+              [phoneNumber, email, users[0].id]
+            );
+          }
+          finalUser = users[0];
+          // Handle multiple primary users scenario
+        } else if (primaryCount > 1) {
           // Set latest 'primary' user to 'secondary'
+          const primaryUsers = users.filter(
+            (user) => user.linkPrecedence == "primary"
+          );
           let latestPrimaryUser = primaryUsers.reduce((prev, current) =>
             prev.createdAt > current.createdAt ? prev : current
           );
@@ -71,39 +88,30 @@ export const getUserByBothParam = async (
             "UPDATE contacts SET linkPrecedence = 'secondary' , linkedId=? WHERE id = ?",
             [users[0].id, latestPrimaryUser.id]
           );
-        } else if (primaryUsers.length === 1) {
-          // Insert new user with linkPrecedence as 'secondary'
-          const primaryUser = primaryUsers[0];
-          await connection.query(
-            "INSERT INTO contacts (phoneNumber, email, linkedId, linkPrecedence) VALUES (?, ?, ?, 'secondary')",
-            [phoneNumber, email, primaryUser.id]
-          );
+          finalUser = users[0];
         }
-      } else {
-        // Insert new user with linkPrecedence as 'primary'
-        await connection.query(
-          "INSERT INTO contacts (phoneNumber, email, linkPrecedence) VALUES (?, ?, 'primary')",
-          [phoneNumber, email]
-        );
-        await connection.commit();
-        const [result] = await connection.query(
-          "SELECT * FROM contacts WHERE phoneNumber = ? AND email = ?",
-          [phoneNumber, email]
-        );
-        const user = result as User[];
-        return user[0];
       }
+    } else {
+      // Insert new user with linkPrecedence as 'primary'
+      const result: any = await connection.query(
+        "INSERT INTO contacts (phoneNumber, email, linkPrecedence) VALUES (?, ?, 'primary')",
+        [phoneNumber, email]
+      );
+      finalUser = {
+        id: result[0].insertId,
+        phoneNumber: phoneNumber,
+        email: email,
+        linkedId: "",
+        linkPrecedence: "primary",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isDeleted: false,
+        deletedAt: undefined,
+      };
     }
     // Commit transaction if all queries succeed
     await connection.commit();
-
-    // Fetch all users again after updating
-    query = `SELECT * FROM contacts WHERE id IN (SELECT linkedId FROM contacts WHERE email = ? AND phoneNumber = ?);`;
-    const [updatedRows] = await connection.query(query, [email, phoneNumber]);
-    const updatedUsers = updatedRows as User[];
-
-    // Return the updated list of users
-    return updatedUsers[0];
+    return finalUser;
   } catch (error) {
     // Rollback transaction if any query fails
     if (connection) {
@@ -122,8 +130,8 @@ export const getUsersByLinkedId = async (id: string): Promise<User[]> => {
   try {
     connection = await pool.getConnection();
     await connection.beginTransaction();
-    let query = "SELECT * FROM contacts WHERE linkedId = ? ";
-    const [result] = await connection.query(query, [id]);
+    let query = "SELECT * FROM contacts WHERE linkedId = ? OR id=? ";
+    const [result] = await connection.query(query, [id, id]);
     const users = result as User[];
     return users;
   } catch (error) {

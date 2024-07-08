@@ -2,8 +2,8 @@ import { createPool } from "mysql2/promise";
 
 const pool = createPool({
   host: "localhost",
-  user: "",
-  password: "",
+  user: "root",
+  password: "root",
   database: "Bitespeed",
   waitForConnections: true,
   connectionLimit: 10,

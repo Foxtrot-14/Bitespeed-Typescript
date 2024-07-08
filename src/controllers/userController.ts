@@ -33,7 +33,13 @@ export const getIdentity = async (
     if (result) {
       let responseStructure;
       let user = result as User;
-      let list: User[] = (await getUsersByLinkedId(user.id)) as User[];
+      let id: string = "";
+      if (user.linkPrecedence === "primary") {
+        id = user.id;
+      } else if (user.linkPrecedence === "secondary") {
+        id = user.linkedId;
+      }
+      let list: User[] = (await getUsersByLinkedId(id)) as User[];
       if (list.length == 0) {
         responseStructure = {
           contact: {
@@ -44,14 +50,21 @@ export const getIdentity = async (
           },
         };
       } else if (list.length > 0) {
-        const emails: string[] = list.map((user) => user.email);
-        emails.push(user.email);
-        const phones: string[] = list.map((user) => user.phoneNumber);
-        phones.push(user.phoneNumber);
-        const ids: string[] = list.map((user) => user.id);
+        const emails: string[] = [...new Set(list.map((user) => user.email))];
+        const phones: string[] = [
+          ...new Set(list.map((user) => user.phoneNumber)),
+        ];
+        const ids: string[] = [
+          ...new Set(
+            list
+              .filter((user) => user.linkPrecedence === "secondary")
+              .map((user) => user.id)
+          ),
+        ];
+
         responseStructure = {
           contact: {
-            primaryContactId: user.id,
+            primaryContactId: id,
             emails: emails,
             phoneNumbers: phones,
             secondaryContactIds: ids,
