@@ -24,16 +24,14 @@ const getUserByOneParam = (identifier, type) => __awaiter(void 0, void 0, void 0
             case "phoneNumber":
                 query = "SELECT * FROM contacts WHERE phoneNumber = ?";
                 break;
-            default:
-                return { message: "Invalid identifier type" };
         }
         const [rows] = yield dbConfig_1.default.query(query, [identifier]);
         const users = rows;
         if (users.length > 0) {
-            return { user: users[0] };
+            return users[0];
         }
         else {
-            return { message: "User not found" };
+            return null;
         }
     }
     catch (error) {
@@ -45,55 +43,69 @@ exports.getUserByOneParam = getUserByOneParam;
 const getUserByBothParam = (email, phoneNumber) => __awaiter(void 0, void 0, void 0, function* () {
     let connection;
     try {
+        //To be returned from the function
+        let finalUser;
         connection = yield dbConfig_1.default.getConnection();
         yield connection.beginTransaction();
-        let query = "SELECT * FROM contacts WHERE email = ? AND phoneNumber = ?";
-        const [result] = yield connection.query(query, [email, phoneNumber]);
-        const user = result;
-        if (user.length != 0) {
-            return user[0];
-        }
-        else {
-            // Step 1: Query to find users matching email or phone number
-            query = "SELECT * FROM contacts WHERE email = ? OR phoneNumber = ?";
-            const [rows] = yield connection.query(query, [email, phoneNumber]);
-            const users = rows;
-            // Step 2: Handle different scenarios based on query results
-            if (users.length > 0) {
-                //what if it matches a user that is secondary. Insert with the same linkedId
-                if (users[0].linkPrecedence === "secondary") {
-                    yield connection.query("INSERT INTO contacts (phoneNumber, email, linkPrecedence,linkedId) VALUES (?, ?, 'secondary',?)", [phoneNumber, email, users[0].linkedId]);
+        // Step 1: Query to find users matching email or phone number
+        let query = "SELECT * FROM contacts WHERE email = ? OR phoneNumber = ?";
+        const [rows] = yield connection.query(query, [email, phoneNumber]);
+        const users = rows;
+        // Step 2: Handle different scenarios based on query results
+        if (users.length > 0) {
+            //if there is an exact record match
+            users.find((user) => {
+                if (user.email == email && user.phoneNumber == phoneNumber) {
+                    finalUser = user;
                 }
-                // Handle multiple primary users scenario
-                const primaryUsers = users.filter((user) => user.linkPrecedence === "primary");
-                if (primaryUsers.length >= 2) {
+            });
+            //if no exact match
+            if (finalUser === undefined) {
+                let primaryCount = 0;
+                users.map((user) => {
+                    if ((user.email == email || user.phoneNumber == phoneNumber) &&
+                        user.linkPrecedence == "primary") {
+                        primaryCount++;
+                    }
+                });
+                if (primaryCount == 1) {
+                    //add new record to the list
+                    if (users[0].linkPrecedence == "secondary") {
+                        yield connection.query("INSERT INTO contacts (phoneNumber, email, linkPrecedence,linkedId) VALUES (?, ?, 'secondary',?)", [phoneNumber, email, users[0].linkedId]);
+                    }
+                    else if (users[0].linkPrecedence == "primary") {
+                        yield connection.query("INSERT INTO contacts (phoneNumber, email, linkPrecedence,linkedId) VALUES (?, ?, 'secondary',?)", [phoneNumber, email, users[0].id]);
+                    }
+                    finalUser = users[0];
+                    // Handle multiple primary users scenario
+                }
+                else if (primaryCount > 1) {
                     // Set latest 'primary' user to 'secondary'
+                    const primaryUsers = users.filter((user) => user.linkPrecedence == "primary");
                     let latestPrimaryUser = primaryUsers.reduce((prev, current) => prev.createdAt > current.createdAt ? prev : current);
                     yield connection.query("UPDATE contacts SET linkPrecedence = 'secondary' , linkedId=? WHERE id = ?", [users[0].id, latestPrimaryUser.id]);
-                }
-                else if (primaryUsers.length === 1) {
-                    // Insert new user with linkPrecedence as 'secondary'
-                    const primaryUser = primaryUsers[0];
-                    yield connection.query("INSERT INTO contacts (phoneNumber, email, linkedId, linkPrecedence) VALUES (?, ?, ?, 'secondary')", [phoneNumber, email, primaryUser.id]);
+                    finalUser = users[0];
                 }
             }
-            else {
-                // Insert new user with linkPrecedence as 'primary'
-                yield connection.query("INSERT INTO contacts (phoneNumber, email, linkPrecedence) VALUES (?, ?, 'primary')", [phoneNumber, email]);
-                yield connection.commit();
-                const [result] = yield connection.query("SELECT * FROM contacts WHERE phoneNumber = ? AND email = ?", [phoneNumber, email]);
-                const user = result;
-                return user[0];
-            }
+        }
+        else {
+            // Insert new user with linkPrecedence as 'primary'
+            const result = yield connection.query("INSERT INTO contacts (phoneNumber, email, linkPrecedence) VALUES (?, ?, 'primary')", [phoneNumber, email]);
+            finalUser = {
+                id: result[0].insertId,
+                phoneNumber: phoneNumber,
+                email: email,
+                linkedId: "",
+                linkPrecedence: "primary",
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                isDeleted: false,
+                deletedAt: undefined,
+            };
         }
         // Commit transaction if all queries succeed
         yield connection.commit();
-        // Fetch all users again after updating
-        query = `SELECT * FROM contacts WHERE id IN (SELECT linkedId FROM contacts WHERE email = ? AND phoneNumber = ?);`;
-        const [updatedRows] = yield connection.query(query, [email, phoneNumber]);
-        const updatedUsers = updatedRows;
-        // Return the updated list of users
-        return updatedUsers[0];
+        return finalUser;
     }
     catch (error) {
         // Rollback transaction if any query fails
@@ -115,8 +127,8 @@ const getUsersByLinkedId = (id) => __awaiter(void 0, void 0, void 0, function* (
     try {
         connection = yield dbConfig_1.default.getConnection();
         yield connection.beginTransaction();
-        let query = "SELECT * FROM contacts WHERE linkedId = ? ";
-        const [result] = yield connection.query(query, [id]);
+        let query = "SELECT * FROM contacts WHERE linkedId = ? OR id=? ";
+        const [result] = yield connection.query(query, [id, id]);
         const users = result;
         return users;
     }

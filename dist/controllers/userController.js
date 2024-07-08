@@ -30,7 +30,14 @@ const getIdentity = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         if (result) {
             let responseStructure;
             let user = result;
-            let list = (yield (0, userService_1.getUsersByLinkedId)(user.id));
+            let id = "";
+            if (user.linkPrecedence === "primary") {
+                id = user.id;
+            }
+            else if (user.linkPrecedence === "secondary") {
+                id = user.linkedId;
+            }
+            let list = (yield (0, userService_1.getUsersByLinkedId)(id));
             if (list.length == 0) {
                 responseStructure = {
                     contact: {
@@ -42,14 +49,18 @@ const getIdentity = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 };
             }
             else if (list.length > 0) {
-                const emails = list.map((user) => user.email);
-                emails.push(user.email);
-                const phones = list.map((user) => user.phoneNumber);
-                phones.push(user.phoneNumber);
-                const ids = list.map((user) => user.id);
+                const emails = [...new Set(list.map((user) => user.email))];
+                const phones = [
+                    ...new Set(list.map((user) => user.phoneNumber)),
+                ];
+                const ids = [
+                    ...new Set(list
+                        .filter((user) => user.linkPrecedence === "secondary")
+                        .map((user) => user.id)),
+                ];
                 responseStructure = {
                     contact: {
-                        primaryContactId: user.id,
+                        primaryContactId: id,
                         emails: emails,
                         phoneNumbers: phones,
                         secondaryContactIds: ids,
