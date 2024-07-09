@@ -5,4 +5,4 @@ const express_1 = require("express");
 const userController_1 = require("../controllers/userController");
 const router = (0, express_1.Router)();
 exports.router = router;
-router.get("/identity", userController_1.getIdentity);
+router.get("/identify", userController_1.getIdentity);
