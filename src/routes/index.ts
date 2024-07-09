@@ -3,6 +3,6 @@ import { getIdentity } from "../controllers/userController";
 
 const router = Router();
 
-router.get("/identity", getIdentity);
+router.get("/identify", getIdentity);
 
 export { router };
