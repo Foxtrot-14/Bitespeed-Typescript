@@ -1,10 +1,10 @@
 export type PrecedenceType = "primary" | "secondary";
 
 export interface User {
-  id: string;
-  phoneNumber: string;
+  id: number;
+  phoneNumber: number;
   email: string;
-  linkedId: string;
+  linkedId: number;
   linkPrecedence: PrecedenceType;
   createdAt: Date;
   updatedAt: Date;

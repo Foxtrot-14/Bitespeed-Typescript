@@ -30,7 +30,7 @@ const getIdentity = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         if (result) {
             let responseStructure;
             let user = result;
-            let id = "";
+            let id = 0;
             if (user.linkPrecedence === "primary") {
                 id = user.id;
             }
@@ -51,7 +51,7 @@ const getIdentity = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             else if (list.length > 0) {
                 const emails = [...new Set(list.map((user) => user.email))];
                 const phones = [
-                    ...new Set(list.map((user) => user.phoneNumber)),
+                    ...new Set(list.map((user) => `${user.phoneNumber}`)),
                 ];
                 const ids = [
                     ...new Set(list
@@ -67,7 +67,18 @@ const getIdentity = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     },
                 };
             }
-            res.status(200).json(responseStructure);
+            res.status(302).json(responseStructure);
+        }
+        else {
+            const responseStructure = {
+                contact: {
+                    primaryContactId: null,
+                    emails: null,
+                    phoneNumbers: null,
+                    secondaryContactIds: null,
+                },
+            };
+            res.status(404).json(responseStructure);
         }
     }
     catch (error) {

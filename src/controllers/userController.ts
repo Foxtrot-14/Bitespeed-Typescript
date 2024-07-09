@@ -7,7 +7,7 @@ import {
 import { User } from "../models/index";
 interface IdentityRequest {
   email?: string;
-  phoneNumber?: string;
+  phoneNumber?: number;
 }
 
 export const getIdentity = async (
@@ -33,7 +33,7 @@ export const getIdentity = async (
     if (result) {
       let responseStructure;
       let user = result as User;
-      let id: string = "";
+      let id: number = 0;
       if (user.linkPrecedence === "primary") {
         id = user.id;
       } else if (user.linkPrecedence === "secondary") {
@@ -52,9 +52,9 @@ export const getIdentity = async (
       } else if (list.length > 0) {
         const emails: string[] = [...new Set(list.map((user) => user.email))];
         const phones: string[] = [
-          ...new Set(list.map((user) => user.phoneNumber)),
+          ...new Set(list.map((user) => `${user.phoneNumber}`)),
         ];
-        const ids: string[] = [
+        const ids: number[] = [
           ...new Set(
             list
               .filter((user) => user.linkPrecedence === "secondary")
@@ -71,7 +71,17 @@ export const getIdentity = async (
           },
         };
       }
-      res.status(200).json(responseStructure);
+      res.status(302).json(responseStructure);
+    } else {
+      const responseStructure = {
+        contact: {
+          primaryContactId: null,
+          emails: null,
+          phoneNumbers: null,
+          secondaryContactIds: null,
+        },
+      };
+      res.status(404).json(responseStructure);
     }
   } catch (error) {
     if (error instanceof Error) {

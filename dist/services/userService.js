@@ -68,7 +68,8 @@ const getUserByBothParam = (email, phoneNumber) => __awaiter(void 0, void 0, voi
                         primaryCount++;
                     }
                 });
-                if (primaryCount == 1) {
+                //The incoming record matches with a primary or secondary record
+                if (primaryCount == 1 || primaryCount == 0) {
                     //add new record to the list
                     if (users[0].linkPrecedence == "secondary") {
                         yield connection.query("INSERT INTO contacts (phoneNumber, email, linkPrecedence,linkedId) VALUES (?, ?, 'secondary',?)", [phoneNumber, email, users[0].linkedId]);
@@ -83,7 +84,7 @@ const getUserByBothParam = (email, phoneNumber) => __awaiter(void 0, void 0, voi
                     // Set latest 'primary' user to 'secondary'
                     const primaryUsers = users.filter((user) => user.linkPrecedence == "primary");
                     let latestPrimaryUser = primaryUsers.reduce((prev, current) => prev.createdAt > current.createdAt ? prev : current);
-                    yield connection.query("UPDATE contacts SET linkPrecedence = 'secondary' , linkedId=? WHERE id = ?", [users[0].id, latestPrimaryUser.id]);
+                    yield connection.query("UPDATE contacts SET linkPrecedence = 'secondary', linkedId = ? WHERE id = ? OR linkedId = ?", [users[0].id, latestPrimaryUser.id, latestPrimaryUser.id]);
                     finalUser = users[0];
                 }
             }
@@ -95,7 +96,7 @@ const getUserByBothParam = (email, phoneNumber) => __awaiter(void 0, void 0, voi
                 id: result[0].insertId,
                 phoneNumber: phoneNumber,
                 email: email,
-                linkedId: "",
+                linkedId: 0,
                 linkPrecedence: "primary",
                 createdAt: new Date(),
                 updatedAt: new Date(),

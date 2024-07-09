@@ -3,7 +3,7 @@ import { User } from "../models/index";
 type IdentifierType = "email" | "phoneNumber";
 
 export const getUserByOneParam = async (
-  identifier: string,
+  identifier: string | number,
   type: IdentifierType
 ): Promise<User | null> => {
   try {
@@ -30,7 +30,7 @@ export const getUserByOneParam = async (
 };
 export const getUserByBothParam = async (
   email: string,
-  phoneNumber: string
+  phoneNumber: number
 ): Promise<User | undefined> => {
   let connection;
   try {
@@ -61,7 +61,8 @@ export const getUserByBothParam = async (
             primaryCount++;
           }
         });
-        if (primaryCount == 1) {
+        //The incoming record matches with a primary or secondary record
+        if (primaryCount == 1 || primaryCount == 0) {
           //add new record to the list
           if (users[0].linkPrecedence == "secondary") {
             await connection.query(
@@ -85,8 +86,8 @@ export const getUserByBothParam = async (
             prev.createdAt > current.createdAt ? prev : current
           );
           await connection.query(
-            "UPDATE contacts SET linkPrecedence = 'secondary' , linkedId=? WHERE id = ?",
-            [users[0].id, latestPrimaryUser.id]
+            "UPDATE contacts SET linkPrecedence = 'secondary', linkedId = ? WHERE id = ? OR linkedId = ?",
+            [users[0].id, latestPrimaryUser.id, latestPrimaryUser.id]
           );
           finalUser = users[0];
         }
@@ -101,7 +102,7 @@ export const getUserByBothParam = async (
         id: result[0].insertId,
         phoneNumber: phoneNumber,
         email: email,
-        linkedId: "",
+        linkedId: 0,
         linkPrecedence: "primary",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -125,7 +126,7 @@ export const getUserByBothParam = async (
     }
   }
 };
-export const getUsersByLinkedId = async (id: string): Promise<User[]> => {
+export const getUsersByLinkedId = async (id: number): Promise<User[]> => {
   let connection;
   try {
     connection = await pool.getConnection();
